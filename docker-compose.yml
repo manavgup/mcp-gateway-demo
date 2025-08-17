@@ -1,0 +1,133 @@
+# Docker Compose configuration for MCP Gateway Demo
+# Uses published containers for MCP tools when available
+
+services:
+  # MCP Gateway - Use the official image or run locally
+  mcp-gateway:
+    image: mcp-contextforge-gateway:latest
+    # Alternative: Use your local MCP Gateway if running separately
+    # Comment out this service if using local gateway
+    ports:
+      - "8000:8000"
+      - "4444:4444"
+    environment:
+      - MCP_GATEWAY_PORT=8000
+      - MCP_GATEWAY_HOST=0.0.0.0
+      - MCP_GATEWAY_SECRET=${MCP_GATEWAY_SECRET:-my-test-key}
+      - MCP_GATEWAY_ADMIN_USER=${MCP_GATEWAY_ADMIN_USER:-admin}
+      - MCP_GATEWAY_ADMIN_PASSWORD=${MCP_GATEWAY_ADMIN_PASSWORD:-admin123}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
+  # PostgreSQL for persistent storage
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=mcp_gateway
+      - POSTGRES_USER=mcp_user
+      - POSTGRES_PASSWORD=mcp_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
+  # MCP Local Repo Analyzer - Use published container
+  # Published at: ghcr.io/manavgup/mcp_local_repo_analyzer:latest
+  local-repo-analyzer:
+    image: ghcr.io/manavgup/mcp_local_repo_analyzer:latest
+    working_dir: /app
+    environment:
+      - MCP_SERVER_PORT=9070
+      - MCP_SERVER_HOST=0.0.0.0
+    ports:
+      - "9070:9070"
+    volumes:
+      - .:/workspace
+      - ./test-repo:/app/test-repo
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
+  # MCP PR Recommender - Use published container
+  # Published at: ghcr.io/manavgup/mcp_pr_recommender:latest
+  pr-recommender:
+    image: ghcr.io/manavgup/mcp_pr_recommender:latest
+    working_dir: /app
+    environment:
+      - MCP_SERVER_PORT=9071
+      - MCP_SERVER_HOST=0.0.0.0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    ports:
+      - "9071:9071"
+    volumes:
+      - .:/workspace
+      - ./test-repo:/app/test-repo
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
+  # MCP Memory Plugin
+  memory-plugin:
+    image: memoryplugin/mcp-server:latest
+    environment:
+      - MEMORY_PLUGIN_TOKEN=${MEMORY_PLUGIN_TOKEN:-default-token}
+    ports:
+      - "9002:8080"
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
+  # MCP GitHub Server
+  github-server:
+    image: ghcr.io/github/github-mcp-server:latest
+    environment:
+      - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_TOKEN}
+    ports:
+      - "9003:8080"
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
+  # MCP Filesystem Server
+  filesystem-server:
+    image: modelcontextprotocol/server-filesystem:latest
+    ports:
+      - "9000:8080"
+    volumes:
+      - ./data:/data
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
+  # Time Server
+  time-server:
+    image: fast-time-server:latest
+    ports:
+      - "8899:8080"
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  mcp-network:
+    driver: bridge
